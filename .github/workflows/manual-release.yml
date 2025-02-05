@@ -1,22 +1,17 @@
-name: 'tagged-release'
+name: Build Cyberiada Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch: # Allows manual triggering of the workflow
 
 jobs:
   linux-windows-build:
-    runs-on: 'ubuntu-latest'
-
-    permissions: write-all
-
-    outputs:
-      upload_url: ${{ steps.automatic_releases.outputs.upload_url }}
+    runs-on: ubuntu-latest # You can change this to macOS or Windows if needed
 
     steps:
-      - name: Check out the repo
+      - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          ref: cyberiada
 
       - name: Download a file
         run: |
@@ -30,17 +25,16 @@ jobs:
           image: electronuserland/builder:wine
           options: -v ${{ github.workspace }}:/project
           run: |
-            npm ci
-            npm run build
-            npm run bundle:linux
-            npm run bundle:win
+            dist/*.deb
+            dist/*.snap
+            dist/*.AppImage
+            dist/*.exe
 
-      - uses: 'marvinpinto/action-automatic-releases@latest'
-        id: 'automatic_releases'
+      - name: Save build artifacts
+        uses: actions/upload-artifact@v3
         with:
-          repo_token: '${{ secrets.GITHUB_TOKEN }}'
-          prerelease: false
-          files: |
+          name: electron-build
+          path: |
             dist/*.deb
             dist/*.snap
             dist/*.AppImage
@@ -49,13 +43,13 @@ jobs:
   mac-build:
     runs-on: 'macos-latest'
 
-    permissions: write-all
-
     needs: linux-windows-build
 
     steps:
-      - name: Check out the repo
+      - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          ref: cyberiada
 
       - name: Use Node.js
         uses: actions/setup-node@v3
@@ -65,13 +59,9 @@ jobs:
       - run: npm run build
       - run: npm run bundle:mac
 
-      - name: Upload Release Asset
-        id: upload-release-asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Save build artifacts
+        uses: actions/upload-artifact@v3
         with:
-          upload_url: ${{ needs.linux-windows-build.outputs.upload_url }}
-          asset_path: ./dist/cyberiada-ide-${{ github.ref_name }}.dmg
-          asset_name: cyberiada-ide-${{ github.ref_name }}.dmg
-          asset_content_type: application/octet-stream
+          name: electron-build
+          path: |
+            dist/*.dmg
