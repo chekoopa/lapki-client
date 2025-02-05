@@ -72,6 +72,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.linux-windows-build.outputs.upload_url }}
-          asset_path: ./dist/lapki-ide-${{ github.ref_name }}.dmg
-          asset_name: lapki-ide-${{ github.ref_name }}.dmg
+          asset_path: ./dist/cyberiada-ide-${{ github.ref_name }}.dmg
+          asset_name: cyberiada-ide-${{ github.ref_name }}.dmg
           asset_content_type: application/octet-stream
