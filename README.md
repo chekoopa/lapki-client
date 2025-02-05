@@ -1,8 +1,8 @@
-# lapki-client
+# Cyberiada IDE
 
 ![light-theme](https://github.com/kruzhok-team/lapki-client/assets/1689801/aa4417d7-d640-4853-8493-b5b1e72311d1)
 
-Клиентская часть Lapki IDE.
+Клиентская часть Cyberiada IDE, среды программирования расширенных иерархических машин состояний.
 
 ## Зависимости
 
