@@ -2,7 +2,21 @@ appId: ru.kruzhok.lapki-ide
 productName: Lapki IDE
 directories:
   buildResources: build
+afterPack: build/after-pack.js
 files:
+  # Release artifacts must never become input to a later packaging target.
+  - '!dist/**'
+  - '!outputs/**'
+  # `build` contains staging-only toolchains (including Windows ARM GCC).
+  # buildResources are still available to electron-builder for icons/scripts.
+  - '!build/**'
+  # Linux packages use the system ARM GCC and must not embed any toolchain.
+  - '!**/gcc-arm-none-eabi{,/**}'
+  - '!**/gcc-arm-none-eabi.zip'
+  # Local Docker and Compose configuration is not part of the application.
+  - '!Dockerfile*'
+  - '!compose*.yml'
+  - '!*.ps1'
   - '!**/.vscode/*'
   - '!src/*'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
@@ -29,14 +43,32 @@ mac:
   entitlementsInherit: build/entitlements.mac.plist
 linux:
   artifactName: ${name}-v${version}.${ext}
+  # Вырезаем не-линуксовые модули из формируемых дистрибутивов.
+  files:
+    - '!resources/modules/win32{,/**}'
+    - '!resources/modules/darwin{,/**}'
+  # resources are unpacked outside app.asar, so filter this copy separately.
+  asarUnpack:
+    - resources/**
+    - '!resources/modules/win32{,/**}'
+    - '!resources/modules/darwin{,/**}'
   target:
     - AppImage
     - snap
     - deb
+    # TODO: - rpm
   maintainer: electronjs.org
   category: Utility
-deb: 
+deb:
   afterInstall: build/udev-rules.sh
+  # These toolchains remain system-provided to avoid duplicating them in the
+  # application payload.  Debian installs required dependencies automatically.
+  depends:
+    - gcc-arm-none-eabi
+    - arduino-cli
+  # xz can exhaust Docker Desktop's memory while fpm creates data.tar.xz.
+  # gzip trades a slightly larger package for a much lower memory peak.
+  compression: gz
 npmRebuild: false
 publish:
   provider: generic
