@@ -20,7 +20,7 @@ jobs:
           rm -f resources/modules/win32/avrdude.zip
       - name: Download Arduino CLI
         run: |
-          wget https://downloads.arduino.cc/arduino-cli/arduino-cli_latest_Windows_64bit.zip -O resources/modules/win32/arduino-cli.zip
+          wget https://github.com/arduino/arduino-cli/releases/download/v1.5.1/arduino-cli_1.5.1_Windows_64bit.zip -O resources/modules/win32/arduino-cli.zip
           unzip resources/modules/win32/arduino-cli.zip -d resources/modules/win32/arduino-cli/
           rm -f resources/modules/win32/arduino-cli.zip
       - name: Download gcc-arm-none-eabi
@@ -37,36 +37,7 @@ jobs:
           image: electronuserland/builder:wine
           options: -v ${{ github.workspace }}:/project
           run: |
-            apt-get update
-            apt-get install -y zip
-            npm ci
-            npm run build
-            npm run bundle:linux
-            npm run bundle:win
-            VERSION=$(node -p "require('./package.json').version")
-
-            mkdir -p outputs
-            mkdir -p outputs/seafile-upload
-            mkdir -p outputs/windows-release/setup_data
-
-            cp dist/*-setup.exe outputs/windows-release/
-            cp build/gcc-arm-none-eabi.zip outputs/windows-release/setup_data/gcc-arm-none-eabi.zip
-            
-            mkdir -p outputs/windows-release/setup_data/irpcb
-            cp -r build/irpcb/bin outputs/windows-release/setup_data/irpcb/bin
-            
-            mkdir -p outputs/windows-release/setup_data/lapki-compiler/fullgraphmlparser
-            cp -r build/lapki-compiler/compiler/library outputs/windows-release/setup_data/lapki-compiler/library
-            cp -r build/lapki-compiler/compiler/platforms outputs/windows-release/setup_data/lapki-compiler/platforms
-            cp -r build/lapki-compiler/compiler/fullgraphmlparser/templates outputs/windows-release/setup_data/lapki-compiler/fullgraphmlparser/templates
-            (
-              cd outputs/windows-release
-              zip -r "../cyberiada-${VERSION}-windows.zip" .
-            )
-            cp outputs/cyberiada-${VERSION}-windows.zip outputs/seafile-upload/
-            cp dist/*.deb outputs/seafile-upload/
-            cp dist/*.snap outputs/seafile-upload/
-            cp dist/*.AppImage outputs/seafile-upload/
+            RELEASE_SKIP_DOWNLOADS=1 bash build/release-linux-windows.sh
 
       - name: Get current date
         id: date

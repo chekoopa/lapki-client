@@ -26,9 +26,11 @@
     "build:win": "npm run build && npm run bundle:win",
     "build:linux": "npm run build && npm run bundle:linux",
     "bundle:win": "electron-builder --win --config",
-    "bundle:linux": "electron-builder --linux --config",
+    "bundle:linux": "npm run prepare:linux && electron-builder --linux --config",
     "bundle:mac": "electron-builder --mac --config",
+    "release:docker": "docker compose -f compose.release.yml run --rm release",
     "prepare:win": "build\\move_compiler_resourses.bat build",
+    "prepare:linux": "bash ./build/prepare-linux-compiler.sh",
     "dependencies:win": "powershell \"& build\\download_compiler_deps.ps1 resources\\modules\\win32\""
   },
   "dependencies": {

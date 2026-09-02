@@ -3,6 +3,7 @@ productName: Lapki IDE
 directories:
   buildResources: build
 files:
+  - '!build/lapki-compiler/**'
   - '!**/.vscode/*'
   - '!src/*'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
@@ -29,13 +30,18 @@ mac:
   entitlementsInherit: build/entitlements.mac.plist
 linux:
   artifactName: ${name}-v${version}.${ext}
+  # Вырезаем не-линуксовые модули из формируемых дистрибутивов.
+  files:
+    - '!resources/modules/win32/**'
+    - '!resources/modules/darwin/**'
   target:
     - AppImage
     - snap
     - deb
+    # TODO: - rpm
   maintainer: electronjs.org
   category: Utility
-deb: 
+deb:
   afterInstall: build/udev-rules.sh
 npmRebuild: false
 publish:

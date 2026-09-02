@@ -1,3 +1,4 @@
+import { app } from 'electron';
 import settings from 'electron-settings';
 // импорт старой версии (3.0 вместо 4.0), так как новая версия требует ESM
 import fixPath from 'fix-path';
@@ -5,6 +6,7 @@ import fixPath from 'fix-path';
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
 import { existsSync } from 'fs';
 import http from 'http';
+import path from 'path';
 
 import { findFreePort, getUsedPorts } from './freePortFinder';
 
@@ -48,14 +50,13 @@ export class ModuleManager {
       const platform = process.platform;
       let chprocess;
       let modulePath: string = '';
+      // При запуске из ярлыка под Linux или в MacOS PATH можем быть урезанным.
+      // Восстановим его, чтобы получить доступ к установленному в системе компилятору.
+      if (platform === 'darwin' || platform === 'linux') {
+        fixPath();
+      }
       switch (platform) {
-        case 'darwin': {
-          // позволяет унаследовать $PATH, то есть системный путь
-          // это нужно для того, чтобы загрузчик смог получить доступ к avrdude, если путь к нему прописан в $PATH
-          fixPath();
-          // break не нужен, так как дальнейшие действия одинаковы для Linux, macOS и windows
-        }
-        // eslint-disable-next-line no-fallthrough
+        case 'darwin':
         case 'linux':
         case 'win32':
           modulePath = this.getModulePath(module);
@@ -97,9 +98,22 @@ export class ModuleManager {
           }
           case 'lapki-compiler': {
             const port = await findFreePort({ usedPorts });
-            const compilerArgs = [`--server-port=${port}`, '--killable'];
+            const compilerArgs = [
+              `--server-port=${port}`,
+              '--killable',
+              `--library-path=${this.getCompilerDataPath('library')}`,
+              `--platform-directory=${this.getCompilerDataPath('platforms')}`,
+              `--build-directory=${path.join(app.getPath('userData'), 'lapki-compiler', 'build')}`,
+              `--artifacts-directory=${path.join(
+                app.getPath('userData'),
+                'lapki-compiler',
+                'artifacts'
+              )}`,
+              `--log-path=${path.join(app.getPath('userData'), 'lapki-compiler', 'logs.log')}`,
+            ];
             switch (platform) {
               case 'win32':
+              case 'linux':
                 modulePath = this.getCompilerPath();
                 await settings.set('compiler.localPort', port);
                 defaultSettings.compiler.localPort = Number(port);
@@ -203,6 +217,15 @@ export class ModuleManager {
 
   static getCompilerPath() {
     return this.getModulePath('lapki-compiler/lapki-compiler');
+  }
+
+  /**
+   * Compiler data is bundled once next to the executable.  Keeping the paths
+   * explicit lets a frozen one-file compiler use the packaged assets instead
+   * of its temporary extraction directory.
+   */
+  static getCompilerDataPath(directory: 'library' | 'platforms'): string {
+    return `${this.getOsPath()}/lapki-compiler/${directory}`;
   }
 
   static getConfPath(): string {
