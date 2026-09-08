@@ -6,13 +6,21 @@ set -euo pipefail
 avrdude_url="${AVRDUDE_URL:-https://github.com/avrdudes/avrdude/releases/download/v8.0/avrdude-v8.0-windows-x86.zip}"
 arduino_cli_url="${ARDUINO_CLI_URL:-https://github.com/arduino/arduino-cli/releases/download/v1.5.1/arduino-cli_1.5.1_Windows_64bit.zip}"
 arduino_cli_linux_url="${ARDUINO_CLI_LINUX_URL:-https://github.com/arduino/arduino-cli/releases/download/v1.5.1/arduino-cli_1.5.1_Linux_64bit.tar.gz}"
+# developer.arm.com is unavailable from some release networks. ArduPilot hosts
+# the same versioned upstream archive; set ARM_GCC_LINUX_URL for an internal
+# mirror when needed.
+arm_gcc_linux_url="${ARM_GCC_LINUX_URL:-https://firmware.ardupilot.org/Tools/STM32-tools/gcc-arm-none-eabi-10-2020-q4-major-x86_64-linux.tar.bz2}"
 arm_gcc_url="${ARM_GCC_URL:-https://seafile.polyus-nt.ru/f/83d0be836d1c491fa3b3/?dl=1}"
 irpcb_url="${IRPCB_URL:-https://seafile.polyus-nt.ru/f/6377a640bc344e31bd6d/?dl=1}"
 release_download_cache="${RELEASE_DOWNLOAD_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/lapki-release}"
 release_linux_targets="${RELEASE_LINUX_TARGETS:-AppImage snap deb}"
 release_seafile_staging="${RELEASE_SEAFILE_STAGING:-0}"
+release_skip_windows="${RELEASE_SKIP_WINDOWS:-0}"
+release_artifacts_dist_dir="${RELEASE_ARTIFACTS_DIST_DIR:-${RELEASE_ARTIFACTS_DIR:+$RELEASE_ARTIFACTS_DIR/dist}}"
+release_artifacts_outputs_dir="${RELEASE_ARTIFACTS_OUTPUTS_DIR:-${RELEASE_ARTIFACTS_DIR:+$RELEASE_ARTIFACTS_DIR/outputs}}"
 project_root="$(pwd)"
 linux_stage=""
+windows_stage=""
 
 download() {
   local url="$1"
@@ -32,15 +40,19 @@ download() {
 
 verify_linux_package() {
   local package_root="$1"
+  local linux_target="$2"
   local unpacked_resources="$package_root/resources/app.asar.unpacked/resources"
   local gcc_path
   local windows_module_path
   local interpreter_path
   local arduino_core_marker
-  gcc_path="$(find "$package_root" -iname '*gcc-arm-none-eabi*' -print -quit)"
-  if [[ -n "$gcc_path" ]]; then
-    echo "Linux package unexpectedly contains an ARM GCC toolchain: $gcc_path" >&2
-    exit 1
+  local arduino_cli_path
+  if [[ "$linux_target" == 'deb' ]]; then
+    gcc_path="$(find "$package_root" -iname '*gcc-arm-none-eabi*' -print -quit)"
+    if [[ -n "$gcc_path" ]]; then
+      echo "DEB unexpectedly contains an ARM GCC toolchain: $gcc_path" >&2
+      exit 1
+    fi
   fi
   windows_module_path="$(find "$unpacked_resources/modules/win32" -type f -print -quit 2>/dev/null || true)"
   if [[ -n "$windows_module_path" ]]; then
@@ -57,19 +69,55 @@ verify_linux_package() {
     echo "Linux package does not contain the bundled Arduino AVR core." >&2
     exit 1
   fi
+  arduino_cli_path="$unpacked_resources/toolchains/linux/arduino-cli/arduino-cli"
+  if [[ ! -x "$arduino_cli_path" ]]; then
+    echo "Linux package does not contain an executable Arduino CLI: $arduino_cli_path" >&2
+    exit 1
+  fi
   if [[ -e "$unpacked_resources/arduino-cli-data/win32" ]]; then
     echo "Linux package unexpectedly contains Windows Arduino AVR core data." >&2
     exit 1
   fi
 }
 
-cleanup_linux_stage() {
+copy_linux_artifact() {
+  local linux_target="$1"
+  local artifact_pattern
+  local artifact_destination
+  local artifacts
+
+  case "$linux_target" in
+    AppImage) artifact_pattern='*.AppImage' ;;
+    snap) artifact_pattern='*.snap' ;;
+    deb) artifact_pattern='*.deb' ;;
+    rpm) artifact_pattern='*.rpm' ;;
+    *)
+      echo "Unsupported Linux artifact target: $linux_target" >&2
+      exit 1
+      ;;
+  esac
+
+  artifact_destination="${release_artifacts_dist_dir:-$project_root/dist}"
+  mkdir -p "$artifact_destination"
+  mapfile -t artifacts < <(find dist -maxdepth 1 -type f -name "$artifact_pattern")
+  if [[ "${#artifacts[@]}" -eq 0 ]]; then
+    echo "Linux build did not create a $linux_target artifact." >&2
+    exit 1
+  fi
+  cp -a "${artifacts[@]}" "$artifact_destination/"
+  echo "[release] Copied $linux_target artifact to $artifact_destination."
+}
+
+cleanup_stages() {
   if [[ -n "$linux_stage" ]]; then
     rm -rf -- "$linux_stage"
   fi
+  if [[ -n "$windows_stage" ]]; then
+    rm -rf -- "$windows_stage"
+  fi
 }
 
-trap cleanup_linux_stage EXIT
+trap cleanup_stages EXIT
 
 if ! command -v zip >/dev/null; then
   apt-get update
@@ -83,17 +131,25 @@ download "$arduino_cli_linux_url" build/arduino-cli-linux/arduino-cli.tar.gz
 tar -xzf build/arduino-cli-linux/arduino-cli.tar.gz -C build/arduino-cli-linux
 bash build/prepare-arduino-cli-core.sh linux build/arduino-cli-linux/arduino-cli
 
-windows_arduino_data_path="$(winepath -w "$project_root/resources/arduino-cli-data/win32")"
-ARDUINO_CLI_DATA_DIR="$windows_arduino_data_path" \
-  bash build/prepare-arduino-cli-core.sh win32 wine \
-  "$project_root/resources/modules/win32/arduino-cli/arduino-cli.exe"
+mkdir -p build/gcc-arm-none-eabi-linux
+download "$arm_gcc_linux_url" build/gcc-arm-none-eabi-linux/gcc-arm-none-eabi.tar.bz2
+bash build/prepare-linux-toolchains.sh \
+  build/arduino-cli-linux/arduino-cli \
+  build/gcc-arm-none-eabi-linux/gcc-arm-none-eabi.tar.bz2
+
+if [[ "$release_skip_windows" != "1" ]]; then
+  windows_arduino_data_path="$(winepath -w "$project_root/resources/arduino-cli-data/win32")"
+  ARDUINO_CLI_DATA_DIR="$windows_arduino_data_path" \
+    bash build/prepare-arduino-cli-core.sh win32 wine \
+    "$project_root/resources/modules/win32/arduino-cli/arduino-cli.exe"
+fi
 
 if ! command -v rsync >/dev/null; then
   apt-get update
   apt-get install --no-install-recommends -y rsync
 fi
 
-if [[ "${RELEASE_SKIP_DOWNLOADS:-0}" != "1" ]]; then
+if [[ "$release_skip_windows" != "1" && "${RELEASE_SKIP_DOWNLOADS:-0}" != "1" ]]; then
   mkdir -p resources/modules/win32/arduino-cli build
   download "$avrdude_url" resources/modules/win32/avrdude.zip
   unzip -oq resources/modules/win32/avrdude.zip -d resources/modules/win32
@@ -145,35 +201,74 @@ ln -s "$project_root/node_modules" "$linux_stage/node_modules"
 
 pushd "$linux_stage" >/dev/null
 for linux_target in $release_linux_targets; do
+  if [[ "$linux_target" == "deb" ]]; then
+    rm -rf -- \
+      resources/toolchains/linux/gcc-arm-none-eabi \
+      resources/toolchains/linux/make
+  else
+    rsync -a --delete "$project_root/resources/toolchains/linux/" "resources/toolchains/linux/"
+  fi
+  echo "[release] Building Linux target: $linux_target"
   npx electron-builder --linux "$linux_target" --config
-  verify_linux_package "dist/linux-unpacked"
+  verify_linux_package "dist/linux-unpacked" "$linux_target"
+  copy_linux_artifact "$linux_target"
 done
-find dist -maxdepth 1 -type f -exec cp -a {} "$project_root/dist/" \;
 popd >/dev/null
-cleanup_linux_stage
+cleanup_stages
 linux_stage=""
 
-npm run bundle:win
+if [[ "$release_skip_windows" != "1" ]]; then
+  # electron-builder performs many small-file operations while preparing an NSIS
+  # installer. Use native Linux storage rather than the Windows bind mount, just
+  # as for the Linux targets. Windows-only resources remain in this stage; Linux
+  # modules and toolchains are not copied because the Windows configuration
+  # excludes them anyway.
+  windows_stage="$(mktemp -d)"
+  rsync -a --delete \
+    --exclude '.git' \
+    --exclude 'node_modules' \
+    --exclude 'out' \
+    --exclude 'dist' \
+    --exclude 'outputs' \
+    --exclude 'build/arduino-cli-linux' \
+    --exclude 'build/gcc-arm-none-eabi' \
+    --exclude 'build/gcc-arm-none-eabi.zip' \
+    --exclude 'build/irpcb' \
+    --exclude 'resources/modules/linux' \
+    --exclude 'resources/modules/darwin' \
+    --exclude 'resources/arduino-cli-data/linux' \
+    --exclude 'resources/toolchains/linux' \
+    "$project_root/" "$windows_stage/"
+  ln -s "$project_root/node_modules" "$windows_stage/node_modules"
+  ln -s "$project_root/out" "$windows_stage/out"
 
-version="$(node -p 'require("./package.json").version')"
-mkdir -p outputs/windows-release/setup_data/irpcb
+  pushd "$windows_stage" >/dev/null
+  npx electron-builder --win --config
+  find dist -maxdepth 1 -type f -exec cp -a {} "$project_root/dist/" \;
+  popd >/dev/null
+  rm -rf -- "$windows_stage"
+  windows_stage=""
 
-cp dist/*-setup.exe outputs/windows-release/
-cp build/gcc-arm-none-eabi.zip outputs/windows-release/setup_data/gcc-arm-none-eabi.zip
-cp -r build/irpcb/bin outputs/windows-release/setup_data/irpcb/bin
+  version="$(node -p 'require("./package.json").version')"
+  mkdir -p outputs/windows-release/setup_data/irpcb
 
-mkdir -p outputs/windows-release/setup_data/lapki-compiler/fullgraphmlparser
-cp -r build/lapki-compiler/compiler/library outputs/windows-release/setup_data/lapki-compiler/library
-cp -r build/lapki-compiler/compiler/platforms outputs/windows-release/setup_data/lapki-compiler/platforms
-cp -r build/lapki-compiler/compiler/fullgraphmlparser/templates \
-  outputs/windows-release/setup_data/lapki-compiler/fullgraphmlparser/templates
+  cp dist/*-setup.exe outputs/windows-release/
+  cp build/gcc-arm-none-eabi.zip outputs/windows-release/setup_data/gcc-arm-none-eabi.zip
+  cp -r build/irpcb/bin outputs/windows-release/setup_data/irpcb/bin
 
-(
-  cd outputs/windows-release
-  zip -qr "../cyberiada-${version}-windows.zip" .
-)
+  mkdir -p outputs/windows-release/setup_data/lapki-compiler/fullgraphmlparser
+  cp -r build/lapki-compiler/compiler/library outputs/windows-release/setup_data/lapki-compiler/library
+  cp -r build/lapki-compiler/compiler/platforms outputs/windows-release/setup_data/lapki-compiler/platforms
+  cp -r build/lapki-compiler/compiler/fullgraphmlparser/templates \
+    outputs/windows-release/setup_data/lapki-compiler/fullgraphmlparser/templates
 
-rm -rf -- outputs/windows-release
+  (
+    cd outputs/windows-release
+    zip -qr "../cyberiada-${version}-windows.zip" .
+  )
+
+  rm -rf -- outputs/windows-release
+fi
 
 if [[ "$release_seafile_staging" == "1" ]]; then
   mkdir -p outputs/seafile-upload
@@ -183,8 +278,8 @@ if [[ "$release_seafile_staging" == "1" ]]; then
     \) -exec cp {} outputs/seafile-upload/ \;
 fi
 
-if [[ -n "${RELEASE_ARTIFACTS_DIR:-}" ]]; then
-  mkdir -p "$RELEASE_ARTIFACTS_DIR/dist" "$RELEASE_ARTIFACTS_DIR/outputs"
-  find dist -maxdepth 1 -type f -exec cp -a {} "$RELEASE_ARTIFACTS_DIR/dist/" \;
-  cp -a outputs/. "$RELEASE_ARTIFACTS_DIR/outputs/"
+if [[ -n "$release_artifacts_dist_dir" && -n "$release_artifacts_outputs_dir" ]]; then
+  mkdir -p "$release_artifacts_dist_dir" "$release_artifacts_outputs_dir"
+  find dist -maxdepth 1 -type f -exec cp -a {} "$release_artifacts_dist_dir/" \;
+  cp -a outputs/. "$release_artifacts_outputs_dir/"
 fi

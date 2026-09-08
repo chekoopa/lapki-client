@@ -3,6 +3,7 @@ set -euo pipefail
 
 cli_version="1.5.1"
 core="arduino:avr@1.8.8"
+package_index_url="${ARDUINO_PACKAGE_INDEX_URL:-https://arduino-downloads.amperka.ru/p/packages/package_index.json}"
 test_root="$(mktemp -d)"
 trap 'rm -rf -- "$test_root"' EXIT
 
@@ -13,7 +14,11 @@ wget --https-only --no-verbose \
   -O "$test_root/arduino-cli.tar.gz"
 tar -xzf "$test_root/arduino-cli.tar.gz" -C "$test_root"
 
-ARDUINO_DIRECTORIES_DATA="$test_root/data" "$test_root/arduino-cli" core update-index
+mkdir -p "$test_root/data"
+wget --https-only --no-verbose --user-agent='Mozilla/5.0' \
+  "$package_index_url" \
+  -O "$test_root/data/package_index.json"
+printf '{"libraries":[]}\n' > "$test_root/data/library_index.json"
 ARDUINO_DIRECTORIES_DATA="$test_root/data" "$test_root/arduino-cli" core install "$core"
 sketch="$(find "$test_root/data/packages/arduino/hardware/avr/1.8.8/libraries" -name '*.ino' -print -quit)"
 if [[ -z "$sketch" ]]; then

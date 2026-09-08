@@ -5,7 +5,7 @@ import fixPath from 'fix-path';
 
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
 import { existsSync } from 'fs';
-import { cp, readFile } from 'fs/promises';
+import { cp, mkdir, readFile } from 'fs/promises';
 import http from 'http';
 import path from 'path';
 
@@ -99,19 +99,19 @@ export class ModuleManager {
           }
           case 'lapki-compiler': {
             const port = await findFreePort({ usedPorts });
+            this.prepareCompilerToolchainPath();
             await this.prepareArduinoCliData();
+            const compilerUserDataPath = path.join(app.getPath('userData'), 'lapki-compiler');
+            await mkdir(compilerUserDataPath, { recursive: true });
             const compilerArgs = [
               `--server-port=${port}`,
               '--killable',
               `--library-path=${this.getCompilerDataPath('library')}`,
               `--platform-directory=${this.getCompilerDataPath('platforms')}`,
-              `--build-directory=${path.join(app.getPath('userData'), 'lapki-compiler', 'build')}`,
-              `--artifacts-directory=${path.join(
-                app.getPath('userData'),
-                'lapki-compiler',
-                'artifacts'
-              )}`,
-              `--log-path=${path.join(app.getPath('userData'), 'lapki-compiler', 'logs.log')}`,
+              `--build-directory=${path.join(compilerUserDataPath, 'build')}`,
+              `--artifacts-directory=${path.join(compilerUserDataPath, 'artifacts')}`,
+              `--log-path=${path.join(compilerUserDataPath, 'logs.log')}`,
+              `--access-token-path=${path.join(compilerUserDataPath, 'ACCESS_TOKENS.txt')}`,
             ];
             switch (platform) {
               case 'win32':
@@ -219,6 +219,31 @@ export class ModuleManager {
 
   static getCompilerPath() {
     return this.getModulePath('lapki-compiler/lapki-compiler');
+  }
+
+  /**
+   * AppImage and strict Snap carry compiler tools as resources because neither
+   * can rely on arbitrary binaries installed on the host.
+   */
+  private static prepareCompilerToolchainPath(): void {
+    if (process.platform !== 'linux') return;
+
+    const toolchainRoot = path.join(basePath, 'toolchains', 'linux');
+    const toolchainDirectories = [
+      path.join(toolchainRoot, 'arduino-cli'),
+      path.join(toolchainRoot, 'gcc-arm-none-eabi', 'bin'),
+      path.join(toolchainRoot, 'make'),
+    ];
+
+    const currentPath = process.env.PATH ?? '';
+    const pathEntries = currentPath.split(path.delimiter);
+    const availableDirectories = toolchainDirectories.filter(existsSync);
+    const missingDirectories = availableDirectories.filter(
+      (directory) => !pathEntries.includes(directory)
+    );
+    if (missingDirectories.length > 0) {
+      process.env.PATH = `${missingDirectories.join(path.delimiter)}${path.delimiter}${currentPath}`;
+    }
   }
 
   /**

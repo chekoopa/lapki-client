@@ -19,4 +19,12 @@ exports.default = async (context) => {
     }
     chmodSync(executablePath, 0o755);
   }
+
+  for (const relativePath of [
+    'resources/app.asar.unpacked/resources/toolchains/linux/arduino-cli/arduino-cli',
+    'resources/app.asar.unpacked/resources/toolchains/linux/make/make',
+  ]) {
+    const executablePath = path.join(context.appOutDir, relativePath);
+    if (existsSync(executablePath)) chmodSync(executablePath, 0o755);
+  }
 };

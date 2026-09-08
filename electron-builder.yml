@@ -30,9 +30,11 @@ win:
   executableName: lapki-ide
   files:
     - '!resources/arduino-cli-data/linux{,/**}'
+    - '!resources/toolchains/linux{,/**}'
   asarUnpack:
     - resources/**
     - '!resources/arduino-cli-data/linux{,/**}'
+    - '!resources/toolchains/linux{,/**}'
 nsis:
   artifactName: ${name}-v${version}-setup.${ext}
   shortcutName: ${productName}
@@ -46,6 +48,11 @@ mac:
       arch: universal
   category: 'public.app-category.developer-tools'
   entitlementsInherit: build/entitlements.mac.plist
+  files:
+    - '!resources/toolchains/linux{,/**}'
+  asarUnpack:
+    - resources/**
+    - '!resources/toolchains/linux{,/**}'
 linux:
   artifactName: ${name}-v${version}.${ext}
   # Вырезаем не-линуксовые модули из формируемых дистрибутивов.
@@ -68,11 +75,10 @@ linux:
   category: Utility
 deb:
   afterInstall: build/udev-rules.sh
-  # These toolchains remain system-provided to avoid duplicating them in the
-  # application payload.  Debian installs required dependencies automatically.
+  # Arduino CLI is bundled because Ubuntu 20.04 has no arduino-cli package.
+  # GNU Arm Embedded Toolchain remains system-provided for DEB.
   depends:
     - gcc-arm-none-eabi
-    - arduino-cli
   # xz can exhaust Docker Desktop's memory while fpm creates data.tar.xz.
   # gzip trades a slightly larger package for a much lower memory peak.
   compression: gz
