@@ -17,6 +17,8 @@ resources/modules/*/arduino-cli
 resources/modules/*/avrdude
 resources/modules/*/gcc-arm-none-eabi
 resources/modules/*/lapki-compiler/build/
+resources/arduino-cli-data/
+build/arduino-cli-linux/
 build/gcc-arm-none-eabi.zip
 build/gcc-arm-none-eabi
 build/irpcb

@@ -5,6 +5,7 @@ import fixPath from 'fix-path';
 
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
 import { existsSync } from 'fs';
+import { cp, readFile } from 'fs/promises';
 import http from 'http';
 import path from 'path';
 
@@ -98,6 +99,7 @@ export class ModuleManager {
           }
           case 'lapki-compiler': {
             const port = await findFreePort({ usedPorts });
+            await this.prepareArduinoCliData();
             const compilerArgs = [
               `--server-port=${port}`,
               '--killable',
@@ -217,6 +219,44 @@ export class ModuleManager {
 
   static getCompilerPath() {
     return this.getModulePath('lapki-compiler/lapki-compiler');
+  }
+
+  /**
+   * Arduino AVR core is bundled per host platform, then copied once into a
+   * writable user directory. Arduino CLI stores indexes and caches alongside
+   * installed platforms, so its packaged resource directory cannot be used
+   * directly.
+   */
+  private static async prepareArduinoCliData(): Promise<void> {
+    const bundledDataPath = path.join(basePath, 'arduino-cli-data', process.platform);
+    const markerName = '.lapki-arduino-avr-core-version';
+    const bundledMarkerPath = path.join(bundledDataPath, markerName);
+
+    if (process.platform === 'win32') {
+      const arduinoCliDirectory = path.join(this.getOsPath(), 'arduino-cli');
+      const arduinoCliPath = path.join(arduinoCliDirectory, 'arduino-cli.exe');
+      if (existsSync(arduinoCliPath)) {
+        const currentPath = process.env.PATH ?? '';
+        if (!currentPath.split(path.delimiter).includes(arduinoCliDirectory)) {
+          process.env.PATH = `${arduinoCliDirectory}${path.delimiter}${currentPath}`;
+        }
+      }
+    }
+
+    if (!existsSync(bundledMarkerPath)) return;
+
+    const coreVersion = (await readFile(bundledMarkerPath, 'utf8')).trim();
+    if (!coreVersion) return;
+
+    const localCoreDirectory = coreVersion.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const localDataPath = path.join(app.getPath('userData'), 'arduino-cli', localCoreDirectory);
+    const localMarkerPath = path.join(localDataPath, markerName);
+    if (!existsSync(localMarkerPath)) {
+      await cp(bundledDataPath, localDataPath, { recursive: true, force: true });
+    }
+
+    process.env.ARDUINO_DIRECTORIES_DATA = localDataPath;
+
   }
 
   /**

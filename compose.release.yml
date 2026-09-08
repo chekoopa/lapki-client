@@ -20,6 +20,12 @@ services:
       RELEASE_ARTIFACTS_DIR: /host-project
       RELEASE_LINUX_TARGETS: "${RELEASE_LINUX_TARGETS:-AppImage snap deb}"
     command: bash build/release-linux-windows.sh
+  arduino-avr-smoke:
+    image: ubuntu:20.04
+    working_dir: /project
+    volumes:
+      - .:/project:ro
+    command: bash build/test-arduino-avr-ubuntu20.sh
 
 volumes:
   node-modules:

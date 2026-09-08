@@ -5,6 +5,7 @@ set -euo pipefail
 # Actions.  Downloads may be overridden with version-pinned URLs in CI.
 avrdude_url="${AVRDUDE_URL:-https://github.com/avrdudes/avrdude/releases/download/v8.0/avrdude-v8.0-windows-x86.zip}"
 arduino_cli_url="${ARDUINO_CLI_URL:-https://github.com/arduino/arduino-cli/releases/download/v1.5.1/arduino-cli_1.5.1_Windows_64bit.zip}"
+arduino_cli_linux_url="${ARDUINO_CLI_LINUX_URL:-https://github.com/arduino/arduino-cli/releases/download/v1.5.1/arduino-cli_1.5.1_Linux_64bit.tar.gz}"
 arm_gcc_url="${ARM_GCC_URL:-https://seafile.polyus-nt.ru/f/83d0be836d1c491fa3b3/?dl=1}"
 irpcb_url="${IRPCB_URL:-https://seafile.polyus-nt.ru/f/6377a640bc344e31bd6d/?dl=1}"
 release_download_cache="${RELEASE_DOWNLOAD_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/lapki-release}"
@@ -35,6 +36,7 @@ verify_linux_package() {
   local gcc_path
   local windows_module_path
   local interpreter_path
+  local arduino_core_marker
   gcc_path="$(find "$package_root" -iname '*gcc-arm-none-eabi*' -print -quit)"
   if [[ -n "$gcc_path" ]]; then
     echo "Linux package unexpectedly contains an ARM GCC toolchain: $gcc_path" >&2
@@ -48,6 +50,15 @@ verify_linux_package() {
   interpreter_path="$unpacked_resources/modules/linux/sm-interpreter"
   if [[ ! -x "$interpreter_path" ]]; then
     echo "Linux package does not contain an executable sm-interpreter: $interpreter_path" >&2
+    exit 1
+  fi
+  arduino_core_marker="$unpacked_resources/arduino-cli-data/linux/.lapki-arduino-avr-core-version"
+  if [[ ! -f "$arduino_core_marker" ]]; then
+    echo "Linux package does not contain the bundled Arduino AVR core." >&2
+    exit 1
+  fi
+  if [[ -e "$unpacked_resources/arduino-cli-data/win32" ]]; then
+    echo "Linux package unexpectedly contains Windows Arduino AVR core data." >&2
     exit 1
   fi
 }
@@ -64,6 +75,18 @@ if ! command -v zip >/dev/null; then
   apt-get update
   apt-get install --no-install-recommends -y zip
 fi
+
+# AVR core contains host-specific AVR tools. Prepare both resource directories
+# before packaging, using the matching Arduino CLI executable.
+mkdir -p build/arduino-cli-linux
+download "$arduino_cli_linux_url" build/arduino-cli-linux/arduino-cli.tar.gz
+tar -xzf build/arduino-cli-linux/arduino-cli.tar.gz -C build/arduino-cli-linux
+bash build/prepare-arduino-cli-core.sh linux build/arduino-cli-linux/arduino-cli
+
+windows_arduino_data_path="$(winepath -w "$project_root/resources/arduino-cli-data/win32")"
+ARDUINO_CLI_DATA_DIR="$windows_arduino_data_path" \
+  bash build/prepare-arduino-cli-core.sh win32 wine \
+  "$project_root/resources/modules/win32/arduino-cli/arduino-cli.exe"
 
 if ! command -v rsync >/dev/null; then
   apt-get update

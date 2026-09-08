@@ -35,6 +35,22 @@ DEB указывает `gcc-arm-none-eabi` и `arduino-cli` как обязат�
 зависимости. Перед запуском `lapki-compiler` клиент восстанавливает системный
 PATH, поэтому эти команды доступны его процессу.
 
+В Linux- и Windows-пакет включается соответствующий платформе Arduino AVR core
+`arduino:avr@1.8.8`. При первом старте он копируется из ресурсов в
+`<userData>/arduino-cli/arduino_avr_1.8.8`; клиент передаёт этот путь через
+`ARDUINO_DIRECTORIES_DATA` процессу `lapki-compiler`. Для подготовки Linux core
+на машине со системным `arduino-cli` используйте:
+
+```bash
+npm run prepare:arduino-core:linux
+```
+
+Проверка установки и компиляции AVR core в Ubuntu 20.04 x64:
+
+```bash
+docker compose -f compose.release.yml run --rm arduino-avr-smoke
+```
+
 Перед сборкой очищается внутренний Docker volume с `dist`: финальные артефакты
 предыдущего запуска не могут попасть во входные файлы следующей упаковки.
 

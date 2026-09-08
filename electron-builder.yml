@@ -28,6 +28,11 @@ asarUnpack:
 # TODO: afterSign: build/notarize.js
 win:
   executableName: lapki-ide
+  files:
+    - '!resources/arduino-cli-data/linux{,/**}'
+  asarUnpack:
+    - resources/**
+    - '!resources/arduino-cli-data/linux{,/**}'
 nsis:
   artifactName: ${name}-v${version}-setup.${ext}
   shortcutName: ${productName}
@@ -47,11 +52,13 @@ linux:
   files:
     - '!resources/modules/win32{,/**}'
     - '!resources/modules/darwin{,/**}'
+    - '!resources/arduino-cli-data/win32{,/**}'
   # resources are unpacked outside app.asar, so filter this copy separately.
   asarUnpack:
     - resources/**
     - '!resources/modules/win32{,/**}'
     - '!resources/modules/darwin{,/**}'
+    - '!resources/arduino-cli-data/win32{,/**}'
   target:
     - AppImage
     - snap
