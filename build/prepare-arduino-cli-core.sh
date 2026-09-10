@@ -12,6 +12,9 @@ else
   cli=("$@")
 fi
 core="arduino:avr@1.8.8"
+# Increment when the layout or required files of the packaged core change.
+# It also makes existing user data from incomplete early packages refresh once.
+marker_content="${core}:2"
 data_root="resources/arduino-cli-data/$platform"
 marker="$data_root/.lapki-arduino-avr-core-version"
 cli_data_dir="${ARDUINO_CLI_DATA_DIR:-$PWD/$data_root}"
@@ -25,7 +28,7 @@ case "$platform" in
   *) echo "Unsupported Arduino core platform: $platform" >&2; exit 1 ;;
 esac
 
-if [[ -f "$marker" ]] && [[ "$(<"$marker")" == "$core" ]]; then
+if [[ -f "$marker" ]] && [[ "$(<"$marker")" == "$marker_content" ]]; then
   exit 0
 fi
 
@@ -61,6 +64,6 @@ if [[ "$platform" == 'win32' ]] && command -v winepath >/dev/null; then
   fi
 fi
 env "${cli_environment[@]}" "${cli[@]}" core install "$core"
-printf '%s\n' "$core" > "$marker"
+printf '%s\n' "$marker_content" > "$marker"
 # Download archives are not needed by the installed core and inflate releases.
 rm -rf -- "$data_root/staging"

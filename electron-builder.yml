@@ -10,8 +10,8 @@ files:
   # `build` contains staging-only toolchains (including Windows ARM GCC).
   # buildResources are still available to electron-builder for icons/scripts.
   - '!build/**'
-  # Linux packages use the system ARM GCC and must not embed any toolchain.
-  - '!**/gcc-arm-none-eabi{,/**}'
+  # The Linux release script removes ARM GCC from the DEB staging directory.
+  # AppImage and Snap keep the complete relocatable toolchain here.
   - '!**/gcc-arm-none-eabi.zip'
   # Local Docker and Compose configuration is not part of the application.
   - '!Dockerfile*'
@@ -79,9 +79,14 @@ deb:
   # GNU Arm Embedded Toolchain remains system-provided for DEB.
   depends:
     - gcc-arm-none-eabi
+    - libusb-1.0-0
   # xz can exhaust Docker Desktop's memory while fpm creates data.tar.xz.
   # gzip trades a slightly larger package for a much lower memory peak.
   compression: gz
+snap:
+  # core18 provides glibc 2.27, while the bundled PyInstaller modules require
+  # GLIBC_2.29. core20 provides glibc 2.31.
+  base: core20
 npmRebuild: false
 publish:
   provider: generic

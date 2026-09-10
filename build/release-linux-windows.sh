@@ -47,12 +47,29 @@ verify_linux_package() {
   local interpreter_path
   local arduino_core_marker
   local arduino_cli_path
+  local avr_lto_plugin
+  local arm_gcc_path
+  local arm_gcc_runtime_file
+  local flasher_libusb_path
   if [[ "$linux_target" == 'deb' ]]; then
     gcc_path="$(find "$package_root" -iname '*gcc-arm-none-eabi*' -print -quit)"
     if [[ -n "$gcc_path" ]]; then
       echo "DEB unexpectedly contains an ARM GCC toolchain: $gcc_path" >&2
       exit 1
     fi
+  else
+    arm_gcc_path="$unpacked_resources/toolchains/linux/gcc-arm-none-eabi/bin/arm-none-eabi-g++"
+    if [[ ! -x "$arm_gcc_path" ]]; then
+      echo "$linux_target does not contain an executable bundled ARM GCC." >&2
+      exit 1
+    fi
+    for arm_gcc_runtime_file in crti.o crtbegin.o libstdc++.a libm.a; do
+      arm_gcc_runtime_file="$("$arm_gcc_path" -print-file-name="$arm_gcc_runtime_file")"
+      if [[ ! -f "$arm_gcc_runtime_file" ]]; then
+        echo "$linux_target ARM GCC is incomplete: $arm_gcc_runtime_file is unavailable." >&2
+        exit 1
+      fi
+    done
   fi
   windows_module_path="$(find "$unpacked_resources/modules/win32" -type f -print -quit 2>/dev/null || true)"
   if [[ -n "$windows_module_path" ]]; then
@@ -64,9 +81,23 @@ verify_linux_package() {
     echo "Linux package does not contain an executable sm-interpreter: $interpreter_path" >&2
     exit 1
   fi
+  if [[ "$linux_target" != 'deb' ]]; then
+    flasher_libusb_path="$unpacked_resources/modules/linux/lib/libusb-1.0.so.0"
+    if [[ ! -f "$flasher_libusb_path" ]]; then
+      echo "Linux package does not contain libusb for lapki-flasher." >&2
+      exit 1
+    fi
+  fi
   arduino_core_marker="$unpacked_resources/arduino-cli-data/linux/.lapki-arduino-avr-core-version"
   if [[ ! -f "$arduino_core_marker" ]]; then
     echo "Linux package does not contain the bundled Arduino AVR core." >&2
+    exit 1
+  fi
+  # Arduino's unversioned plugin is a symlink to liblto_plugin.so.0.0.0.
+  # Do not use `find -type f`: it would reject the valid symlink.
+  avr_lto_plugin="$(find "$unpacked_resources/arduino-cli-data/linux/packages/arduino/tools/avr-gcc" -name liblto_plugin.so -print -quit 2>/dev/null || true)"
+  if [[ -z "$avr_lto_plugin" || ! -e "$avr_lto_plugin" ]]; then
+    echo "Linux package does not contain AVR GCC's liblto_plugin.so." >&2
     exit 1
   fi
   arduino_cli_path="$unpacked_resources/toolchains/linux/arduino-cli/arduino-cli"
@@ -176,11 +207,11 @@ find outputs -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
 
 npm ci
 npm run build
-npm run prepare:linux
 
 # Сборка забирает всё, до чего доберётся, поэтому надёжнее 
 # собирать под Linux из-под отдельной копии проекта.
 linux_stage="$(mktemp -d)"
+echo '[release] Copying project to native Linux storage for packaging...'
 rsync -a --delete \
   --exclude '.git' \
   --exclude 'node_modules' \
@@ -191,6 +222,7 @@ rsync -a --delete \
   --exclude 'resources/modules/win32' \
   --exclude 'resources/modules/darwin' \
   "$project_root/" "$linux_stage/"
+echo '[release] Native Linux staging copy is ready.'
 # `/project` is commonly a Windows bind mount, where chmod is not preserved.
 # The staging directory is native Linux storage, so make bundled executables
 # runnable there before electron-builder copies them into the package.
@@ -200,11 +232,15 @@ chmod 755 \
 ln -s "$project_root/node_modules" "$linux_stage/node_modules"
 
 pushd "$linux_stage" >/dev/null
+echo '[release] Preparing Linux module resources in native storage...'
+npm run prepare:linux
+echo '[release] Linux module resources are ready.'
 for linux_target in $release_linux_targets; do
   if [[ "$linux_target" == "deb" ]]; then
     rm -rf -- \
       resources/toolchains/linux/gcc-arm-none-eabi \
-      resources/toolchains/linux/make
+      resources/toolchains/linux/make \
+      resources/modules/linux/lib
   else
     rsync -a --delete "$project_root/resources/toolchains/linux/" "resources/toolchains/linux/"
   fi
@@ -224,6 +260,7 @@ if [[ "$release_skip_windows" != "1" ]]; then
   # modules and toolchains are not copied because the Windows configuration
   # excludes them anyway.
   windows_stage="$(mktemp -d)"
+  echo '[release] Copying project to native Linux storage for Windows packaging...'
   rsync -a --delete \
     --exclude '.git' \
     --exclude 'node_modules' \
@@ -239,6 +276,7 @@ if [[ "$release_skip_windows" != "1" ]]; then
     --exclude 'resources/arduino-cli-data/linux' \
     --exclude 'resources/toolchains/linux' \
     "$project_root/" "$windows_stage/"
+  echo '[release] Native Windows staging copy is ready.'
   ln -s "$project_root/node_modules" "$windows_stage/node_modules"
   ln -s "$project_root/out" "$windows_stage/out"
 
