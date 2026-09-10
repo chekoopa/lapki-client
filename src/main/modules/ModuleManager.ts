@@ -5,7 +5,7 @@ import fixPath from 'fix-path';
 
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
 import { existsSync } from 'fs';
-import { chmod, cp, mkdir, readFile, readdir, rename, writeFile } from 'fs/promises';
+import { cp, mkdir, readFile } from 'fs/promises';
 import http from 'http';
 import path from 'path';
 
@@ -279,48 +279,18 @@ export class ModuleManager {
     const localDataPath = path.join(app.getPath('userData'), 'arduino-cli', localCoreDirectory);
     const localMarkerPath = path.join(localDataPath, markerName);
     if (!existsSync(localMarkerPath)) {
-      await cp(bundledDataPath, localDataPath, { recursive: true, force: true });
-    }
-
-    if (process.platform === 'linux') {
-      await this.prepareLinuxAvrToolEnvironment(localDataPath);
+      // Arduino AVR GCC uses relative symlinks for its LTO plugin. Preserve
+      // them verbatim: resolving them here would point user data at the
+      // temporary AppImage mount (or a particular DEB installation path).
+      await cp(bundledDataPath, localDataPath, {
+        recursive: true,
+        force: true,
+        verbatimSymlinks: true,
+      });
     }
 
     process.env.ARDUINO_DIRECTORIES_DATA = localDataPath;
 
-  }
-
-  /**
-   * The one-file PyInstaller compiler exports its private library directory to
-   * every child process. GNU AVR binutils then cannot locate their adjacent
-   * LTO plugin. Arduino CLI invokes these tools by absolute path, so PATH
-   * sanitising in the IDE is insufficient. Wrap the writable per-user copy.
-   */
-  private static async prepareLinuxAvrToolEnvironment(dataPath: string): Promise<void> {
-    const avrGccRoot = path.join(dataPath, 'packages', 'arduino', 'tools', 'avr-gcc');
-    if (!existsSync(avrGccRoot)) return;
-
-    for (const version of await readdir(avrGccRoot, { withFileTypes: true })) {
-      if (!version.isDirectory()) continue;
-
-      const binDirectory = path.join(avrGccRoot, version.name, 'bin');
-      if (!existsSync(binDirectory)) continue;
-
-      const realToolsDirectory = path.join(binDirectory, '.lapki-real');
-      for (const tool of await readdir(binDirectory, { withFileTypes: true })) {
-        if (!tool.name.startsWith('avr-') || (!tool.isFile() && !tool.isSymbolicLink())) continue;
-
-        const toolPath = path.join(binDirectory, tool.name);
-        const realToolPath = path.join(realToolsDirectory, tool.name);
-        if (existsSync(realToolPath)) continue;
-
-        await mkdir(realToolsDirectory, { recursive: true });
-        await rename(toolPath, realToolPath);
-        const wrapper = `#!/bin/sh\nunset LD_LIBRARY_PATH LD_LIBRARY_PATH_ORIG LD_PRELOAD\ntool_dir="\${0%/*}"\nexec "$tool_dir/.lapki-real/${tool.name}" "$@"\n`;
-        await writeFile(toolPath, wrapper, { mode: 0o755 });
-        await chmod(toolPath, 0o755);
-      }
-    }
   }
 
   /**

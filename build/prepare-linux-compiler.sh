@@ -10,6 +10,9 @@ target_root="resources/modules/linux/lapki-compiler"
 binary_path="$target_root/lapki-compiler"
 interpreter_path="resources/modules/linux/sm-interpreter"
 flasher_library_root="resources/modules/linux/lib"
+avrdude_path="${LAPKI_AVRDUDE_PATH:-}"
+avrdude_config_path="${LAPKI_AVRDUDE_CONFIG_PATH:-/etc/avrdude.conf}"
+avrdude_library_directory="${LAPKI_AVRDUDE_LIBRARY_DIR:-}"
 
 for required_path in \
   "$binary_path" \
@@ -41,8 +44,32 @@ if [[ -z "$libusb_path" ]] || [[ ! -f "$libusb_path" ]]; then
   echo 'libusb-1.0.so.0 is required to package lapki-flasher for Linux.' >&2
   exit 1
 fi
+rm -rf -- "$flasher_library_root"
 install -d "$flasher_library_root"
 install -m 755 "$libusb_path" "$flasher_library_root/libusb-1.0.so.0"
+
+# AppImage and strict Snap cannot rely on the host's avrdude or its config.
+if [[ -z "$avrdude_path" ]]; then
+  avrdude_path="$(command -v avrdude || true)"
+fi
+if [[ -z "$avrdude_path" ]] || [[ ! -x "$avrdude_path" ]]; then
+  echo 'avrdude is required to package lapki-flasher for Linux.' >&2
+  exit 1
+fi
+if [[ ! -f "$avrdude_config_path" ]]; then
+  echo "avrdude configuration is missing: $avrdude_config_path" >&2
+  exit 1
+fi
+install -m 755 "$avrdude_path" "resources/modules/linux/avrdude.real"
+install -m 755 build/avrdude-wrapper.sh "resources/modules/linux/avrdude"
+install -m 644 "$avrdude_config_path" "resources/modules/linux/avrdude.conf"
+if [[ -n "$avrdude_library_directory" ]]; then
+  if [[ ! -d "$avrdude_library_directory" ]]; then
+    echo "avrdude library directory is missing: $avrdude_library_directory" >&2
+    exit 1
+  fi
+  cp -a "$avrdude_library_directory/." "$flasher_library_root/"
+fi
 
 echo '[prepare:linux] Copying compiler data...'
 install -d "$target_root/fullgraphmlparser"

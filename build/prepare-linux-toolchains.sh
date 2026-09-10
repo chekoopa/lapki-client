@@ -11,7 +11,8 @@ trap 'rm -rf -- "$temporary_root"' EXIT
 
 rm -rf -- "$target_root"
 mkdir -p "$target_root/arduino-cli" "$target_root/make"
-install -m 755 "$arduino_cli" "$target_root/arduino-cli/arduino-cli"
+install -m 755 "$arduino_cli" "$target_root/arduino-cli/arduino-cli.real"
+install -m 755 build/arduino-cli-wrapper.sh "$target_root/arduino-cli/arduino-cli"
 install -m 755 "$(command -v make)" "$target_root/make/make"
 
 tar -xf "$arm_gcc_archive" -C "$temporary_root"

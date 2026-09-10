@@ -45,12 +45,15 @@ verify_linux_package() {
   local gcc_path
   local windows_module_path
   local interpreter_path
+  local cyberbear_loader_path
   local arduino_core_marker
   local arduino_cli_path
   local avr_lto_plugin
   local arm_gcc_path
   local arm_gcc_runtime_file
   local flasher_libusb_path
+  local avrdude_path
+  local avrdude_config_path
   if [[ "$linux_target" == 'deb' ]]; then
     gcc_path="$(find "$package_root" -iname '*gcc-arm-none-eabi*' -print -quit)"
     if [[ -n "$gcc_path" ]]; then
@@ -81,10 +84,25 @@ verify_linux_package() {
     echo "Linux package does not contain an executable sm-interpreter: $interpreter_path" >&2
     exit 1
   fi
+  cyberbear_loader_path="$unpacked_resources/modules/linux/blg-mb/cyberbear-loader"
+  if [[ ! -x "$cyberbear_loader_path" ]]; then
+    echo "Linux package does not contain an executable cyberbear-loader: $cyberbear_loader_path" >&2
+    exit 1
+  fi
   if [[ "$linux_target" != 'deb' ]]; then
     flasher_libusb_path="$unpacked_resources/modules/linux/lib/libusb-1.0.so.0"
     if [[ ! -f "$flasher_libusb_path" ]]; then
       echo "Linux package does not contain libusb for lapki-flasher." >&2
+      exit 1
+    fi
+    avrdude_path="$unpacked_resources/modules/linux/avrdude"
+    avrdude_config_path="$unpacked_resources/modules/linux/avrdude.conf"
+    if [[ ! -x "$avrdude_path" ]] || [[ ! -f "$avrdude_config_path" ]]; then
+      echo "Linux package does not contain bundled avrdude and its configuration." >&2
+      exit 1
+    fi
+    if LD_LIBRARY_PATH="$unpacked_resources/modules/linux/lib" ldd "$avrdude_path" | grep -q 'not found'; then
+      echo "Bundled avrdude has unresolved shared-library dependencies." >&2
       exit 1
     fi
   fi
@@ -228,7 +246,8 @@ echo '[release] Native Linux staging copy is ready.'
 # runnable there before electron-builder copies them into the package.
 chmod 755 \
   "$linux_stage/resources/modules/linux/lapki-compiler/lapki-compiler" \
-  "$linux_stage/resources/modules/linux/sm-interpreter"
+  "$linux_stage/resources/modules/linux/sm-interpreter" \
+  "$linux_stage/resources/modules/linux/blg-mb/cyberbear-loader"
 ln -s "$project_root/node_modules" "$linux_stage/node_modules"
 
 pushd "$linux_stage" >/dev/null
@@ -240,7 +259,10 @@ for linux_target in $release_linux_targets; do
     rm -rf -- \
       resources/toolchains/linux/gcc-arm-none-eabi \
       resources/toolchains/linux/make \
-      resources/modules/linux/lib
+      resources/modules/linux/lib \
+      resources/modules/linux/avrdude \
+      resources/modules/linux/avrdude.real \
+      resources/modules/linux/avrdude.conf
   else
     rsync -a --delete "$project_root/resources/toolchains/linux/" "resources/toolchains/linux/"
   fi

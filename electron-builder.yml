@@ -80,6 +80,7 @@ deb:
   depends:
     - gcc-arm-none-eabi
     - libusb-1.0-0
+    - avrdude
   # xz can exhaust Docker Desktop's memory while fpm creates data.tar.xz.
   # gzip trades a slightly larger package for a much lower memory peak.
   compression: gz
@@ -87,6 +88,12 @@ snap:
   # core18 provides glibc 2.27, while the bundled PyInstaller modules require
   # GLIBC_2.29. core20 provides glibc 2.31.
   base: core20
+  plugs:
+    - default
+    # These restricted interfaces must be connected by the administrator.
+    - raw-usb
+    - serial-port
+    - hardware-observe
 npmRebuild: false
 publish:
   provider: generic

@@ -14,7 +14,7 @@ fi
 core="arduino:avr@1.8.8"
 # Increment when the layout or required files of the packaged core change.
 # It also makes existing user data from incomplete early packages refresh once.
-marker_content="${core}:2"
+marker_content="${core}:4"
 data_root="resources/arduino-cli-data/$platform"
 marker="$data_root/.lapki-arduino-avr-core-version"
 cli_data_dir="${ARDUINO_CLI_DATA_DIR:-$PWD/$data_root}"

@@ -51,10 +51,11 @@ npm run release:docker
 DEB сжимается `gzip`, а не `xz`: пакет получается немного больше, но сборка
 требует значительно меньше памяти Docker Desktop.
 
-DEB указывает `gcc-arm-none-eabi` как обязательную системную зависимость.
-`arduino-cli` включён в пакет, поскольку Ubuntu 20.04 не предоставляет его в
-стандартных репозиториях. Перед запуском `lapki-compiler` клиент восстанавливает
-системный PATH и добавляет каталог встроенного Arduino CLI.
+DEB указывает `gcc-arm-none-eabi`, `libusb-1.0-0` и `avrdude` как обязательные
+системные зависимости. `arduino-cli` включён в пакет, поскольку Ubuntu 20.04
+не предоставляет его в стандартных репозиториях. Перед запуском
+`lapki-compiler` клиент восстанавливает системный PATH и добавляет каталог
+встроенного Arduino CLI.
 
 В Linux- и Windows-пакет включается соответствующий платформе Arduino AVR core
 `arduino:avr@1.8.8`. При первом старте он копируется из ресурсов в
@@ -72,14 +73,43 @@ npm run prepare:arduino-core:linux
 docker compose -f compose.release.yml run --rm arduino-avr-smoke
 ```
 
-AppImage и Snap содержат собственные `arduino-cli`, GNU Arm Embedded Toolchain
-и `make`: эти форматы не могут надёжно использовать инструменты хоста. DEB
+AppImage и Snap содержат собственные `arduino-cli`, GNU Arm Embedded Toolchain,
+`make` и `avrdude` с конфигурацией и необходимыми библиотеками: эти форматы не
+могут надёжно использовать инструменты хоста. DEB
 содержит `arduino-cli`, но перед его сборкой из staging-копии удаляются GNU Arm
 Embedded Toolchain и `make`: `gcc-arm-none-eabi` устанавливается как зависимость,
 а `make` предоставляется базовой системой.
 
 Snap использует `core20`, так как PyInstaller-модулям требуется GLIBC не ниже
-2.29; также в него добавляется `libusb-1.0-0` для `lapki-flasher`.
+2.29. `lapki-flasher` получает совместимую с Ubuntu 20.04 копию `libusb` из
+ресурсов приложения.
+
+Snap работает в strict confinement. После установки администратор должен
+разрешить прямой USB-доступ:
+
+```bash
+sudo snap connect lapki-ide:raw-usb
+```
+
+Для последовательного порта нужно подключить конкретный slot, доступный в
+системе:
+
+```bash
+snap interface serial-port
+sudo snap connect lapki-ide:serial-port <snap-or-system-slot>
+```
+
+`raw-usb` не отменяет обычные права Linux на устройство. DEB устанавливает
+правила автоматически; для Snap и AppImage запустите один раз на хосте:
+
+```bash
+sudo sh resources/udev/install-udev-rules.sh
+```
+
+Скрипт устанавливает [`99-mb1.rules`](../resources/udev/99-mb1.rules),
+перезагружает правила и запускает обработку USB. Затем переподключите
+устройство. На системах без serial-port slot может требоваться поддержка
+hotplug в snapd; Snap не может обходить это ограничение.
 
 Перед сборкой очищается внутренний Docker volume с `dist`: финальные артефакты
 предыдущего запуска не могут попасть во входные файлы следующей упаковки.
