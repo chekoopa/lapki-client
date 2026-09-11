@@ -48,6 +48,15 @@ $env:RELEASE_LINUX_TARGETS = 'AppImage snap deb'
 npm run release:docker
 ```
 
+Чтобы после успешной Linux-сборки повторить только Windows-часть, задайте
+`RELEASE_SKIP_LINUX=1`. Уже скопированные на хост Linux-артефакты в `dist/`
+не затрагиваются:
+
+```powershell
+$env:RELEASE_SKIP_LINUX = '1'
+npm run release:docker
+```
+
 DEB сжимается `gzip`, а не `xz`: пакет получается немного больше, но сборка
 требует значительно меньше памяти Docker Desktop.
 
@@ -67,6 +76,12 @@ DEB указывает `gcc-arm-none-eabi`, `libusb-1.0-0` и `avrdude` как �
 npm run prepare:arduino-core:linux
 ```
 
+Windows NSIS — самодостаточный установщик: ARM GCC, Arduino CLI с AVR core,
+данные `lapki-compiler` и IRPCB (включая требуемые MSYS DLL) находятся в его
+`resources`, распакованных рядом с `app.asar`. Внешняя папка `setup_data` и
+изменение пользовательского `PATH` не требуются: клиент добавляет эти каталоги
+только в окружение собственных дочерних процессов.
+
 Проверка установки и компиляции AVR core в Ubuntu 20.04 x64:
 
 ```bash
@@ -77,8 +92,8 @@ AppImage и Snap содержат собственные `arduino-cli`, GNU Arm 
 `make` и `avrdude` с конфигурацией и необходимыми библиотеками: эти форматы не
 могут надёжно использовать инструменты хоста. DEB
 содержит `arduino-cli`, но перед его сборкой из staging-копии удаляются GNU Arm
-Embedded Toolchain и `make`: `gcc-arm-none-eabi` устанавливается как зависимость,
-а `make` предоставляется базовой системой.
+Embedded Toolchain и `make`: оба устанавливаются как обязательные зависимости
+пакета.
 
 Snap использует `core20`, так как PyInstaller-модулям требуется GLIBC не ниже
 2.29. `lapki-flasher` получает совместимую с Ubuntu 20.04 копию `libusb` из

@@ -40,7 +40,6 @@ nsis:
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
-  include: build-installer/installer.nsh
 mac:
   artifactName: ${name}-v${version}.${ext}
   target:
@@ -79,6 +78,7 @@ deb:
   # GNU Arm Embedded Toolchain remains system-provided for DEB.
   depends:
     - gcc-arm-none-eabi
+    - make
     - libusb-1.0-0
     - avrdude
   # xz can exhaust Docker Desktop's memory while fpm creates data.tar.xz.

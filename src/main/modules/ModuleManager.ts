@@ -223,19 +223,26 @@ export class ModuleManager {
     return this.getModulePath('lapki-compiler/lapki-compiler');
   }
 
-  /**
-   * AppImage and strict Snap carry compiler tools as resources because neither
-   * can rely on arbitrary binaries installed on the host.
-   */
+  /** Add bundled compiler tools to this process only; never alter user PATH. */
   private static prepareCompilerToolchainPath(): void {
-    if (process.platform !== 'linux') return;
-
-    const toolchainRoot = path.join(basePath, 'toolchains', 'linux');
-    const toolchainDirectories = [
-      path.join(toolchainRoot, 'arduino-cli'),
-      path.join(toolchainRoot, 'gcc-arm-none-eabi', 'bin'),
-      path.join(toolchainRoot, 'make'),
-    ];
+    let toolchainDirectories: string[];
+    if (process.platform === 'linux') {
+      const toolchainRoot = path.join(basePath, 'toolchains', 'linux');
+      toolchainDirectories = [
+        path.join(toolchainRoot, 'arduino-cli'),
+        path.join(toolchainRoot, 'gcc-arm-none-eabi', 'bin'),
+        path.join(toolchainRoot, 'make'),
+      ];
+    } else if (process.platform === 'win32') {
+      const moduleRoot = this.getOsPath();
+      toolchainDirectories = [
+        path.join(moduleRoot, 'gcc-arm-none-eabi', 'bin'),
+        path.join(moduleRoot, 'arduino-cli'),
+        path.join(moduleRoot, 'irpcb', 'bin'),
+      ];
+    } else {
+      return;
+    }
 
     const currentPath = process.env.PATH ?? '';
     const pathEntries = currentPath.split(path.delimiter);

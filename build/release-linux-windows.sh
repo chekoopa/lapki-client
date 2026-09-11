@@ -15,6 +15,7 @@ irpcb_url="${IRPCB_URL:-https://seafile.polyus-nt.ru/f/6377a640bc344e31bd6d/?dl=
 release_download_cache="${RELEASE_DOWNLOAD_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/lapki-release}"
 release_linux_targets="${RELEASE_LINUX_TARGETS:-AppImage snap deb}"
 release_seafile_staging="${RELEASE_SEAFILE_STAGING:-0}"
+release_skip_linux="${RELEASE_SKIP_LINUX:-0}"
 release_skip_windows="${RELEASE_SKIP_WINDOWS:-0}"
 release_artifacts_dist_dir="${RELEASE_ARTIFACTS_DIST_DIR:-${RELEASE_ARTIFACTS_DIR:+$RELEASE_ARTIFACTS_DIR/dist}}"
 release_artifacts_outputs_dir="${RELEASE_ARTIFACTS_OUTPUTS_DIR:-${RELEASE_ARTIFACTS_DIR:+$RELEASE_ARTIFACTS_DIR/outputs}}"
@@ -173,18 +174,20 @@ if ! command -v zip >/dev/null; then
   apt-get install --no-install-recommends -y zip
 fi
 
-# AVR core contains host-specific AVR tools. Prepare both resource directories
-# before packaging, using the matching Arduino CLI executable.
-mkdir -p build/arduino-cli-linux
-download "$arduino_cli_linux_url" build/arduino-cli-linux/arduino-cli.tar.gz
-tar -xzf build/arduino-cli-linux/arduino-cli.tar.gz -C build/arduino-cli-linux
-bash build/prepare-arduino-cli-core.sh linux build/arduino-cli-linux/arduino-cli
+if [[ "$release_skip_linux" != "1" ]]; then
+  # AVR core contains host-specific AVR tools. Prepare it before packaging,
+  # using the matching Linux Arduino CLI executable.
+  mkdir -p build/arduino-cli-linux
+  download "$arduino_cli_linux_url" build/arduino-cli-linux/arduino-cli.tar.gz
+  tar -xzf build/arduino-cli-linux/arduino-cli.tar.gz -C build/arduino-cli-linux
+  bash build/prepare-arduino-cli-core.sh linux build/arduino-cli-linux/arduino-cli
 
-mkdir -p build/gcc-arm-none-eabi-linux
-download "$arm_gcc_linux_url" build/gcc-arm-none-eabi-linux/gcc-arm-none-eabi.tar.bz2
-bash build/prepare-linux-toolchains.sh \
-  build/arduino-cli-linux/arduino-cli \
-  build/gcc-arm-none-eabi-linux/gcc-arm-none-eabi.tar.bz2
+  mkdir -p build/gcc-arm-none-eabi-linux
+  download "$arm_gcc_linux_url" build/gcc-arm-none-eabi-linux/gcc-arm-none-eabi.tar.bz2
+  bash build/prepare-linux-toolchains.sh \
+    build/arduino-cli-linux/arduino-cli \
+    build/gcc-arm-none-eabi-linux/gcc-arm-none-eabi.tar.bz2
+fi
 
 if [[ "$release_skip_windows" != "1" ]]; then
   windows_arduino_data_path="$(winepath -w "$project_root/resources/arduino-cli-data/win32")"
@@ -215,6 +218,28 @@ if [[ "$release_skip_windows" != "1" && "${RELEASE_SKIP_DOWNLOADS:-0}" != "1" ]]
   rm -f build/irpcb.zip
 fi
 
+if [[ "$release_skip_windows" != "1" ]]; then
+  if [[ ! -f build/gcc-arm-none-eabi.zip ]] || [[ ! -d build/irpcb/bin ]]; then
+    echo 'Windows compiler payload is missing; enable downloads or provide cached artifacts.' >&2
+    exit 1
+  fi
+
+  windows_gcc_unpack_dir="$(mktemp -d)"
+  unzip -oq build/gcc-arm-none-eabi.zip -d "$windows_gcc_unpack_dir"
+  windows_gcc_executable="$(find "$windows_gcc_unpack_dir" -type f -iname arm-none-eabi-gcc.exe -print -quit)"
+  if [[ -z "$windows_gcc_executable" ]]; then
+    echo 'Windows ARM GCC archive does not contain arm-none-eabi-gcc.exe.' >&2
+    exit 1
+  fi
+  windows_gcc_root="$(dirname "$(dirname "$windows_gcc_executable")")"
+  rm -rf -- resources/modules/win32/gcc-arm-none-eabi resources/modules/win32/irpcb
+  mkdir -p resources/modules/win32/irpcb
+  cp -a "$windows_gcc_root" resources/modules/win32/gcc-arm-none-eabi
+  cp -a build/irpcb/bin resources/modules/win32/irpcb/bin
+  rm -rf -- "$windows_gcc_unpack_dir"
+  bash build/prepare-windows-compiler.sh
+fi
+
 mkdir -p dist
 # `dist` – именованный раздел Docker, где лежат релизы. 
 # Перед сборкой нужно вычистить старые артефакты,
@@ -225,55 +250,58 @@ find outputs -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
 
 npm ci
 npm run build
+version="$(node -p 'require("./package.json").version')"
 
-# Сборка забирает всё, до чего доберётся, поэтому надёжнее 
-# собирать под Linux из-под отдельной копии проекта.
-linux_stage="$(mktemp -d)"
-echo '[release] Copying project to native Linux storage for packaging...'
-rsync -a --delete \
-  --exclude '.git' \
-  --exclude 'node_modules' \
-  --exclude 'dist' \
-  --exclude 'outputs' \
-  --exclude 'build/gcc-arm-none-eabi' \
-  --exclude 'build/gcc-arm-none-eabi.zip' \
-  --exclude 'resources/modules/win32' \
-  --exclude 'resources/modules/darwin' \
-  "$project_root/" "$linux_stage/"
-echo '[release] Native Linux staging copy is ready.'
-# `/project` is commonly a Windows bind mount, where chmod is not preserved.
-# The staging directory is native Linux storage, so make bundled executables
-# runnable there before electron-builder copies them into the package.
-chmod 755 \
-  "$linux_stage/resources/modules/linux/lapki-compiler/lapki-compiler" \
-  "$linux_stage/resources/modules/linux/sm-interpreter" \
-  "$linux_stage/resources/modules/linux/blg-mb/cyberbear-loader"
-ln -s "$project_root/node_modules" "$linux_stage/node_modules"
+if [[ "$release_skip_linux" != "1" ]]; then
+  # Сборка забирает всё, до чего доберётся, поэтому надёжнее
+  # собирать под Linux из-под отдельной копии проекта.
+  linux_stage="$(mktemp -d)"
+  echo '[release] Copying project to native Linux storage for packaging...'
+  rsync -a --delete \
+    --exclude '.git' \
+    --exclude 'node_modules' \
+    --exclude 'dist' \
+    --exclude 'outputs' \
+    --exclude 'build/gcc-arm-none-eabi' \
+    --exclude 'build/gcc-arm-none-eabi.zip' \
+    --exclude 'resources/modules/win32' \
+    --exclude 'resources/modules/darwin' \
+    "$project_root/" "$linux_stage/"
+  echo '[release] Native Linux staging copy is ready.'
+  # `/project` is commonly a Windows bind mount, where chmod is not preserved.
+  # The staging directory is native Linux storage, so make bundled executables
+  # runnable there before electron-builder copies them into the package.
+  chmod 755 \
+    "$linux_stage/resources/modules/linux/lapki-compiler/lapki-compiler" \
+    "$linux_stage/resources/modules/linux/sm-interpreter" \
+    "$linux_stage/resources/modules/linux/blg-mb/cyberbear-loader"
+  ln -s "$project_root/node_modules" "$linux_stage/node_modules"
 
-pushd "$linux_stage" >/dev/null
-echo '[release] Preparing Linux module resources in native storage...'
-npm run prepare:linux
-echo '[release] Linux module resources are ready.'
-for linux_target in $release_linux_targets; do
-  if [[ "$linux_target" == "deb" ]]; then
-    rm -rf -- \
-      resources/toolchains/linux/gcc-arm-none-eabi \
-      resources/toolchains/linux/make \
-      resources/modules/linux/lib \
-      resources/modules/linux/avrdude \
-      resources/modules/linux/avrdude.real \
-      resources/modules/linux/avrdude.conf
-  else
-    rsync -a --delete "$project_root/resources/toolchains/linux/" "resources/toolchains/linux/"
-  fi
-  echo "[release] Building Linux target: $linux_target"
-  npx electron-builder --linux "$linux_target" --config
-  verify_linux_package "dist/linux-unpacked" "$linux_target"
-  copy_linux_artifact "$linux_target"
-done
-popd >/dev/null
-cleanup_stages
-linux_stage=""
+  pushd "$linux_stage" >/dev/null
+  echo '[release] Preparing Linux module resources in native storage...'
+  npm run prepare:linux
+  echo '[release] Linux module resources are ready.'
+  for linux_target in $release_linux_targets; do
+    if [[ "$linux_target" == "deb" ]]; then
+      rm -rf -- \
+        resources/toolchains/linux/gcc-arm-none-eabi \
+        resources/toolchains/linux/make \
+        resources/modules/linux/lib \
+        resources/modules/linux/avrdude \
+        resources/modules/linux/avrdude.real \
+        resources/modules/linux/avrdude.conf
+    else
+      rsync -a --delete "$project_root/resources/toolchains/linux/" "resources/toolchains/linux/"
+    fi
+    echo "[release] Building Linux target: $linux_target"
+    npx electron-builder --linux "$linux_target" --config
+    verify_linux_package "dist/linux-unpacked" "$linux_target"
+    copy_linux_artifact "$linux_target"
+  done
+  popd >/dev/null
+  cleanup_stages
+  linux_stage=""
+fi
 
 if [[ "$release_skip_windows" != "1" ]]; then
   # electron-builder performs many small-file operations while preparing an NSIS
@@ -309,18 +337,8 @@ if [[ "$release_skip_windows" != "1" ]]; then
   rm -rf -- "$windows_stage"
   windows_stage=""
 
-  version="$(node -p 'require("./package.json").version')"
-  mkdir -p outputs/windows-release/setup_data/irpcb
-
+  mkdir -p outputs/windows-release
   cp dist/*-setup.exe outputs/windows-release/
-  cp build/gcc-arm-none-eabi.zip outputs/windows-release/setup_data/gcc-arm-none-eabi.zip
-  cp -r build/irpcb/bin outputs/windows-release/setup_data/irpcb/bin
-
-  mkdir -p outputs/windows-release/setup_data/lapki-compiler/fullgraphmlparser
-  cp -r build/lapki-compiler/compiler/library outputs/windows-release/setup_data/lapki-compiler/library
-  cp -r build/lapki-compiler/compiler/platforms outputs/windows-release/setup_data/lapki-compiler/platforms
-  cp -r build/lapki-compiler/compiler/fullgraphmlparser/templates \
-    outputs/windows-release/setup_data/lapki-compiler/fullgraphmlparser/templates
 
   (
     cd outputs/windows-release

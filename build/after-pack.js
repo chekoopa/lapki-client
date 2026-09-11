@@ -7,6 +7,28 @@ const path = require('path');
  * staging tree immediately before AppImage, Snap or DEB is created.
  */
 exports.default = async (context) => {
+  if (context.electronPlatformName === 'win32') {
+    for (const relativePath of [
+      'resources/app.asar.unpacked/resources/modules/win32/lapki-compiler/lapki-compiler.exe',
+      'resources/app.asar.unpacked/resources/modules/win32/lapki-compiler/library',
+      'resources/app.asar.unpacked/resources/modules/win32/lapki-compiler/platforms',
+      'resources/app.asar.unpacked/resources/modules/win32/lapki-compiler/fullgraphmlparser/templates',
+      'resources/app.asar.unpacked/resources/modules/win32/gcc-arm-none-eabi/bin/arm-none-eabi-gcc.exe',
+      'resources/app.asar.unpacked/resources/modules/win32/arduino-cli/arduino-cli.exe',
+      'resources/app.asar.unpacked/resources/arduino-cli-data/win32/packages/arduino/hardware/avr/1.8.8',
+      'resources/app.asar.unpacked/resources/modules/win32/irpcb/bin/make.exe',
+      'resources/app.asar.unpacked/resources/modules/win32/irpcb/bin/msys-2.0.dll',
+    ]) {
+      const resourcePath = path.join(context.appOutDir, relativePath);
+      if (!existsSync(resourcePath)) {
+        throw new Error(
+          `Required Windows compiler resource is missing from package: ${resourcePath}`
+        );
+      }
+    }
+    return;
+  }
+
   if (context.electronPlatformName !== 'linux') return;
 
   for (const relativePath of [
