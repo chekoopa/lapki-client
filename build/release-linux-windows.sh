@@ -189,13 +189,6 @@ if [[ "$release_skip_linux" != "1" ]]; then
     build/gcc-arm-none-eabi-linux/gcc-arm-none-eabi.tar.bz2
 fi
 
-if [[ "$release_skip_windows" != "1" ]]; then
-  windows_arduino_data_path="$(winepath -w "$project_root/resources/arduino-cli-data/win32")"
-  ARDUINO_CLI_DATA_DIR="$windows_arduino_data_path" \
-    bash build/prepare-arduino-cli-core.sh win32 wine \
-    "$project_root/resources/modules/win32/arduino-cli/arduino-cli.exe"
-fi
-
 if ! command -v rsync >/dev/null; then
   apt-get update
   apt-get install --no-install-recommends -y rsync
@@ -219,6 +212,11 @@ if [[ "$release_skip_windows" != "1" && "${RELEASE_SKIP_DOWNLOADS:-0}" != "1" ]]
 fi
 
 if [[ "$release_skip_windows" != "1" ]]; then
+  windows_arduino_data_path="$(winepath -w "$project_root/resources/arduino-cli-data/win32")"
+  ARDUINO_CLI_DATA_DIR="$windows_arduino_data_path" \
+    bash build/prepare-arduino-cli-core.sh win32 wine \
+    "$project_root/resources/modules/win32/arduino-cli/arduino-cli.exe"
+
   if [[ ! -f build/gcc-arm-none-eabi.zip ]] || [[ ! -d build/irpcb/bin ]]; then
     echo 'Windows compiler payload is missing; enable downloads or provide cached artifacts.' >&2
     exit 1
